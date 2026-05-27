@@ -125,18 +125,43 @@ git_add_and_commit() {
 }
 
 rand_chars() {
-    # Generate random characters by reading '/dev/urandom' with the
-    # 'tr' command to translate the random bytes into a
-    # configurable character set.
-    #
-    # The 'dd' command is then used to read only the desired length.
+    # Generate random characters by reading finite chunks from
+    # '/dev/urandom' and filtering the random bytes with 'tr'
+    # into a configurable character set.
     #
     # Regarding usage of '/dev/urandom' instead of '/dev/random'.
     # See: https://www.2uo.de/myths-about-urandom
     #
     # $1 = number of chars to receive
     # $2 = filter for the chars
-    LC_ALL=C tr -dc "$2" </dev/urandom | dd bs=1 count="$1" 2>/dev/null
+    length=$1
+    filter=$2
+    chars=
+
+    case $length in
+    '' | *[!0123456789]*) return 1 ;;
+    esac
+
+    [ "$filter" ] || return
+
+    while [ "${#chars}" -lt "$length" ]; do
+        need=$((length - ${#chars}))
+
+        # The default filter accepts about 1/4 of random bytes,
+        # so read more than the remaining requested length.
+        bytes=$((need * 8))
+
+        # Read at least one small block so sparse filters do not
+        # require many short attempts.
+        [ "$bytes" -lt 4096 ] && bytes=4096
+
+        chunk=$(LC_ALL=C head -c "$bytes" /dev/urandom |
+            LC_ALL=C tr -dc "$filter") || return
+
+        chars=$chars$chunk
+    done
+
+    printf '%.*s' "$length" "$chars"
 }
 
 yn() {
